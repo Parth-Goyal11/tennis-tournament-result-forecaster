@@ -1,5 +1,6 @@
 import pandas as pd
 from datetime import datetime
+import numpy as np
 import json
 
 #Constants
@@ -15,6 +16,12 @@ with open("tennis_elos_pretty.json") as f:
 
 #print(df["Winner"])
 
+def solve_q(p3):
+    coeffs = [-2, 3, 0, -p3]
+    roots = np.roots(coeffs)
+
+    real_roots = [r for r in roots if abs(r.imag) < 1e-6 and 0<=r.real<=1]
+    return real_roots[0]
 
 def last_10_matches(player):
     matches = df[
@@ -67,6 +74,12 @@ def elo_probability(player1, player2):
     eloTwo = players[player2]["gelo"]
 
     return 1 / (1 + 10 ** ((eloTwo - eloOne) / 400))
+
+def elo_probability_bO5(player1, player2):
+    
+    set_prob = solve_q(elo_probability(player1, player2)).real
+    
+    return ((6*pow(set_prob, 5)) - (15*pow(set_prob, 4)) + (10*pow(set_prob, 3)))
 
 def ranking_probability(player1, player2):
     rankOne = players[player1]["rank"]
@@ -124,7 +137,8 @@ def recency_probability(player1, player2):
 def calculate_match_probability(player1, player2):
 
 
-    elo = elo_probability(player1, player2) #1
+    #elo = elo_probability(player1, player2) #1
+    elo = elo_probability_bO5(player1, player2)
     headToHead = head_to_head(player1, player2) #2
     recentPerf = recency_probability(player1, player2) #3
     ranking = ranking_probability(player1, player2) #4
@@ -137,28 +151,28 @@ def calculate_match_probability(player1, player2):
 
 
 
+if __name__ == "__main__":
+    firstPlayer = input("Enter the First Player: ")
+    secondPlayer = input("Enter the Second Player: ")
 
-firstPlayer = input("Enter the First Player: ")
-secondPlayer = input("Enter the Second Player: ")
+    fPlayerFirst, fPlayerLast = firstPlayer.split(" ", 1)
+    sPlayerFirst, sPlayerLast = secondPlayer.split(" ", 1)
 
-fPlayerFirst, fPlayerLast = firstPlayer.split(" ", 1)
-sPlayerFirst, sPlayerLast = secondPlayer.split(" ", 1)
+    feedFirst = fPlayerLast + " " + fPlayerFirst[0] + "."
+    feedSecond = sPlayerLast + " " + sPlayerFirst[0] + "."
 
-feedFirst = fPlayerLast + " " + fPlayerFirst[0] + "."
-feedSecond = sPlayerLast + " " + sPlayerFirst[0] + "."
+    matchVal = calculate_match_probability(feedFirst, feedSecond)
 
-#print(head_to_head(feedFirst, feedSecond)[["Tournament", "Winner", "Score"]])
+    if(calculate_match_probability(feedFirst, feedSecond) < 0.5):
+        winner = feedSecond
+        confidence = 1 - matchVal
+    else:
+        winner = feedFirst
+        confidence = matchVal
 
+    print("Prediction:", end=" ")
+    print(winner + " " + " Confidence: " + str(round(confidence*100, 2)) + "%")
 
-if(calculate_match_probability(feedFirst, feedSecond) < 0.5):
-    winner = feedSecond
-    confidence = 1 - calculate_match_probability(feedFirst, feedSecond)
-else:
-    winner = feedFirst
-    confidence = calculate_match_probability(feedFirst, feedSecond)
-
-print("Prediction:", end=" ")
-print(winner + " " + " Confidence: " + str(round(confidence*100, 2)) + "%")
 
 
 
