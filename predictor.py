@@ -2,10 +2,11 @@ import pandas as pd
 from datetime import datetime
 import numpy as np
 import json
+import math
 
 #Constants
-ELO_WEIGHT = 0.65
-RECENT_WEIGHT = 0.15
+ELO_WEIGHT = 0.60
+RECENT_WEIGHT = 0.20
 H2H_WEIGHT = 0.15
 RANK_WEIGHT = 0.05
 df = pd.read_csv("atp_tennis.csv")
@@ -15,6 +16,9 @@ with open("tennis_elos_pretty.json") as f:
     players = json.load(f)
 
 #print(df["Winner"])
+
+def sigmoid(x):
+    return 1 / (1 + math.exp(-x))
 
 def solve_q(p3):
     coeffs = [-2, 3, 0, -p3]
@@ -67,6 +71,31 @@ def head_to_head(player1, player2):
 
     return round(((oneWins+1)/(oneWins + twoWins + 2)), 4)
 
+def head_to_head_train(player1, player2, match_date):
+    matches = df[
+        (
+            (
+                (df["Player_1"] == player1)
+                &
+                (df["Player_2"] == player2)
+            )
+            |
+            (
+                (df["Player_1"] == player2)
+                &
+                (df["Player_2"] == player1)
+
+            )
+        )
+        &
+        (df["Date"] >= match_date - pd.DateOffset(years=2)) &
+        (df["Date"] < match_date)
+    ]
+
+    oneWins = (matches["Winner"] == player1).sum()
+    twoWins = (matches["Winner"] == player2).sum()
+    return round(((oneWins+1)/(oneWins+twoWins+2)), 4)
+
 def elo_probability(player1, player2):
 
 
@@ -81,11 +110,32 @@ def elo_probability_bO5(player1, player2):
     
     return ((6*pow(set_prob, 5)) - (15*pow(set_prob, 4)) + (10*pow(set_prob, 3)))
 
+def elo_probability_surface(player1, player2, elo_type, best_of=5):
+    eloOne = players[player1].get(elo_type) or players[player1].get("elo")
+    eloTwo = players[player2].get(elo_type) or players[player2].get("elo")
+
+    if eloOne is None or eloTwo is None:
+        return None
+    
+    p3 = 1 / (1 + 10 ** ((eloTwo - eloOne) / 400))
+
+    if best_of == 3:
+        return p3
+    
+    set_prob = solve_q(p3).real
+    return ((6*pow(set_prob, 5)) - (15*pow(set_prob, 4)) + (10*pow(set_prob, 3)))
+
+
+    
 def ranking_probability(player1, player2):
     rankOne = players[player1]["rank"]
     rankTwo = players[player2]["rank"]
 
     probability = 0.5 + ((rankTwo - rankOne) / 200)
+    return max(0, min(1, probability))
+
+def ranking_probability_from_csv(rank1, rank2):
+    probability = 0.5 + ((rank2 - rank1) / 200)
     return max(0, min(1, probability))
 
 def recency_score(player1):
@@ -127,12 +177,50 @@ def recency_score(player1):
 
     return formScore / matchesChecked
 
+def recency_score_train(player, match_date, df):
+    matches = df[
+        ((df["Player_1"] == player) | (df["Player_2"] == player)) &
+        (df["Date"] < match_date)
+    ].sort_values(by="Date", ascending=False).head(10)
+
+    if len(matches) == 0:
+        return 0.5
+
+    score = 0
+    total_weight = 0
+
+    for _, match in matches.iterrows():
+        if match["Player_1"] == player:
+            opponent_rank = match["Rank_2"]
+        else:
+            opponent_rank = match["Rank_1"]
+
+        if pd.isna(opponent_rank) or opponent_rank <= 0:
+            continue
+
+        weight = 1 / opponent_rank  # higher ranked opponent = more weight
+        result = 1 if match["Winner"] == player else 0
+        score += result * weight
+        total_weight += weight
+
+    if total_weight == 0:
+        return 0.5
+
+    return score / total_weight
+
 def recency_probability(player1, player2):
     score1 = recency_score(player1)
     score2 = recency_score(player2)
 
     probability = 0.5 + (score1 - score2)
     return max(0.25, min(0.75, probability))
+
+def recency_probability_train(player1, player2, match_date, df):
+    score1 = recency_score_train(player1, match_date, df)
+    score2 = recency_score_train(player2, match_date, df)
+
+    probability = 0.5 + (score1 - score2)
+    return max(0, min(1, probability))
 
 def calculate_match_probability(player1, player2):
 
@@ -144,11 +232,20 @@ def calculate_match_probability(player1, player2):
     ranking = ranking_probability(player1, player2) #4
     
 
-    matchProb = ((elo*ELO_WEIGHT) + (headToHead*H2H_WEIGHT) 
-                 + (recentPerf*RECENT_WEIGHT) + (ranking*RANK_WEIGHT))
+    # matchProb = ((elo*ELO_WEIGHT) + (headToHead*H2H_WEIGHT) 
+    #              + (recentPerf*RECENT_WEIGHT) + (ranking*RANK_WEIGHT))
     
-    return matchProb
+    # return matchProb
+    score1 = (elo*1.874) + (headToHead*1.148) + (recentPerf*0.628) + (ranking*1.440)
+    
+    elo2 = elo_probability_bO5(player2, player1)
+    h2h2 = head_to_head(player2, player1)
+    recency2 = recency_probability(player2, player1)
+    ranking2 = ranking_probability(player2, player1)
 
+    score2 = (elo2*1.874) + (h2h2*1.148) + (recency2*0.628) + (ranking2*1.440)
+
+    return math.exp(score1) / (math.exp(score1) + math.exp(score2))
 
 
 if __name__ == "__main__":
@@ -172,10 +269,8 @@ if __name__ == "__main__":
 
     print("Prediction:", end=" ")
     print(winner + " " + " Confidence: " + str(round(confidence*100, 2)) + "%")
-
-
-
-
+    
+    
 
 
     
