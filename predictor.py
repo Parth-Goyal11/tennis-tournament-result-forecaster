@@ -15,6 +15,18 @@ df["Date"] = pd.to_datetime(df["Date"])
 with open("tennis_elos_pretty.json") as f:
     players = json.load(f)
 
+# Pre-index matches by player so per-player lookups skip the full CSV scan.
+_player_matches: dict = {}
+for _idx, _row in df.iterrows():
+    for _p in (_row["Player_1"], _row["Player_2"]):
+        if _p not in _player_matches:
+            _player_matches[_p] = []
+        _player_matches[_p].append(_idx)
+_player_match_dfs: dict = {p: df.loc[idxs].sort_values("Date", ascending=False)
+                            for p, idxs in _player_matches.items()}
+
+
+
 #print(df["Winner"])
 
 def sigmoid(x):
@@ -28,48 +40,18 @@ def solve_q(p3):
     return real_roots[0]
 
 def last_10_matches(player):
-    matches = df[
-    (df["Player_1"] == player) 
-    |
-    (df["Player_2"] == player)
-    ]
-
-    matches = matches.sort_values(
-        by="Date",
-        ascending=False
-    )
-
-    return matches.head(10)
+    return _player_match_dfs.get(player, df.iloc[0:0]).head(10)
 
 def head_to_head(player1, player2):
-    matches = df[
-        (
-            (   (df["Player_1"] == player1)
-                &
-                (df["Player_2"] == player2)
-            )
-            |
-            (    
-                (df["Player_1"] == player2)
-                &
-                (df["Player_2"] == player1)
-            )
-        )
-        &
-        (df["Date"].dt.year >= datetime.now().year - 2)
+    p1_matches = _player_match_dfs.get(player1, df.iloc[0:0])
+    cutoff_year = datetime.now().year - 2
+    matches = p1_matches[
+        ((p1_matches["Player_2"] == player2) | (p1_matches["Player_1"] == player2))
+        & (p1_matches["Date"].dt.year >= cutoff_year)
     ]
-
-    matches = matches.sort_values(
-        by="Date",
-        ascending=False
-    )
-
-    
-
     oneWins = (matches["Winner"] == player1).sum()
     twoWins = (matches["Winner"] == player2).sum()
-
-    return round(((oneWins+1)/(oneWins + twoWins + 2)), 4)
+    return round(((oneWins + 1) / (oneWins + twoWins + 2)), 4)
 
 def head_to_head_train(player1, player2, match_date):
     matches = df[
@@ -138,7 +120,11 @@ def ranking_probability_from_csv(rank1, rank2):
     probability = 0.5 + ((rank2 - rank1) / 200)
     return max(0, min(1, probability))
 
+_recency_cache: dict = {}
+
 def recency_score(player1):
+    if player1 in _recency_cache:
+        return _recency_cache[player1]
     matches = last_10_matches(player1)
 
     if len(matches) == 0:
@@ -173,9 +159,12 @@ def recency_score(player1):
         matchesChecked += 1
 
     if matchesChecked == 0:
+        _recency_cache[player1] = 0.5
         return 0.5
 
-    return formScore / matchesChecked
+    result = formScore / matchesChecked
+    _recency_cache[player1] = result
+    return result
 
 def recency_score_train(player, match_date, df):
     matches = df[
@@ -224,6 +213,8 @@ def recency_probability_train(player1, player2, match_date, df):
 
 def calculate_match_probability(player1, player2):
 
+    
+
 
     #elo = elo_probability(player1, player2) #1
     elo = elo_probability_bO5(player1, player2)
@@ -232,20 +223,23 @@ def calculate_match_probability(player1, player2):
     ranking = ranking_probability(player1, player2) #4
     
 
-    # matchProb = ((elo*ELO_WEIGHT) + (headToHead*H2H_WEIGHT) 
-    #              + (recentPerf*RECENT_WEIGHT) + (ranking*RANK_WEIGHT))
+    matchProb = ((elo*ELO_WEIGHT) + (headToHead*H2H_WEIGHT) 
+                 + (recentPerf*RECENT_WEIGHT) + (ranking*RANK_WEIGHT))
     
-    # return matchProb
-    score1 = (elo*1.874) + (headToHead*1.148) + (recentPerf*0.628) + (ranking*1.440)
+    return matchProb
+    # score1 = (elo*1.874) + (headToHead*1.148) + (recentPerf*0.628) + (ranking*1.440)
     
-    elo2 = elo_probability_bO5(player2, player1)
-    h2h2 = head_to_head(player2, player1)
-    recency2 = recency_probability(player2, player1)
-    ranking2 = ranking_probability(player2, player1)
+    # elo2 = elo_probability_bO5(player2, player1)
+    # h2h2 = head_to_head(player2, player1)
+    # recency2 = recency_probability(player2, player1)
+    # ranking2 = ranking_probability(player2, player1)    
 
-    score2 = (elo2*1.874) + (h2h2*1.148) + (recency2*0.628) + (ranking2*1.440)
+    
 
-    return math.exp(score1) / (math.exp(score1) + math.exp(score2))
+    # score2 = (elo2*1.874) + (h2h2*1.148) + (recency2*0.628) + (ranking2*1.440)
+
+
+    # return math.exp(score1) / (math.exp(score1) + math.exp(score2))
 
 
 if __name__ == "__main__":

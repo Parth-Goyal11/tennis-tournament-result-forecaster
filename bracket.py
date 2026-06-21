@@ -1,16 +1,26 @@
 from predictor import calculate_match_probability, elo_probability_bO5
 import pandas as pd
+import json
 
-draw = ["Sinner J.", "Zverev A.", "Djokovic N.", "Machac T.", 
-        "Medvedev D.", "Fritz T.", "Ruud C.", "Shelton B."]
+with open("tennis_elos_pretty.json") as f:
+    players = json.load(f)
+
+draw = sorted(players.keys(), key=lambda p: players[p]["rank"])[:128]
+
+
+_prob_cache: dict = {}
 
 def safe_match_probability(player1, player2):
-    try:
-        return calculate_match_probability(player1, player2)
-    except KeyError:
-        return 0.5
+    key = (player1, player2)
+    if key not in _prob_cache:
+        try:
+            _prob_cache[key] = calculate_match_probability(player1, player2)
+        except KeyError:
+            _prob_cache[key] = 0.5
+    return _prob_cache[key]
 
 def simulate_tournament(draw):
+    _prob_cache.clear()
     probabilities = {player: [1.0] for player in draw}
 
     group_size = 2

@@ -412,6 +412,7 @@ tbody tr:hover {
   margin-top: 16px;
   overflow: auto;
   padding-bottom: 18px;
+  transition: zoom 0.2s ease-out;
 }
 
 .bracket-grid {
@@ -452,6 +453,12 @@ tbody tr:hover {
   background: #172019;
 }
 
+.round-label.active {
+  background: #182a1b;
+  border-color: rgba(184, 214, 95, 0.65);
+  color: #d9f28b;
+}
+
 .round-matchups {
   display: flex;
   flex-direction: column;
@@ -468,10 +475,11 @@ tbody tr:hover {
   background: rgba(13, 17, 16, 0.84);
   color: inherit;
   cursor: pointer;
-  padding: 9px;
+  padding: 7px 9px;
   text-align: left;
 }
 
+/* Connector spans — hidden by default, shown selectively below */
 .top-join-line,
 .bottom-join-line,
 .vertical-join-line,
@@ -481,49 +489,96 @@ tbody tr:hover {
   pointer-events: none;
 }
 
-.matchup-card:not(.final-match):nth-child(odd) .top-join-line,
-.matchup-card:not(.final-match):nth-child(odd) .vertical-join-line,
-.matchup-card:not(.final-match):nth-child(odd) .feed-line,
-.matchup-card:not(.final-match):nth-child(even) .bottom-join-line {
-  display: block;
-}
+/*
+ * Bracket connectors use true L-shaped borders so corners render as a single
+ * continuous stroke rather than four separate overlapping segments.
+ *
+ * Geometry (card height = 86px, column gap = 42px, arm width = 21px):
+ *   ODD card  ────┐  (top-join-line: border-top + border-right, curves down)
+ *                 │
+ *                 ├───  (feed-line at junction midpoint, 21px to next column)
+ *                 │
+ *   EVEN card ────┘  (bottom-join-line: border-bottom + border-right, curves up)
+ *
+ * Each arm height = (round-gap + 86px) / 2  →  meets at the exact midpoint
+ * between the two paired cards.  The 21 + 21 = 42px horizontal span fills the
+ * column gap precisely so lines enter the next card flush.
+ */
 
-.top-join-line,
-.bottom-join-line {
+/* ODD card: L-arm right then down to junction */
+.matchup-card:not(.final-match):nth-child(odd) .top-join-line {
+  display: block;
   left: 100%;
   top: 50%;
-  width: 28px;
-  border-top: 2px solid rgba(184, 214, 95, 0.46);
+  width: 21px;
+  height: calc((var(--round-gap) + 86px) / 2);
+  border-top: 2px solid rgba(184, 214, 95, 0.58);
+  border-right: 2px solid rgba(184, 214, 95, 0.58);
+  border-top-right-radius: 5px;
 }
 
-.top-join-line {
-  border-top-right-radius: 16px;
+/* EVEN card: L-arm right then up to junction */
+.matchup-card:not(.final-match):nth-child(even) .bottom-join-line {
+  display: block;
+  left: 100%;
+  bottom: 50%;
+  width: 21px;
+  height: calc((var(--round-gap) + 86px) / 2);
+  border-bottom: 2px solid rgba(184, 214, 95, 0.58);
+  border-right: 2px solid rgba(184, 214, 95, 0.58);
+  border-bottom-right-radius: 5px;
 }
 
-.bottom-join-line {
-  border-top-right-radius: 16px;
-}
-
-.vertical-join-line {
-  left: calc(100% + 28px);
-  top: 50%;
-  height: calc(var(--round-gap) + 86px);
-  border-right: 2px solid rgba(184, 214, 95, 0.46);
-  border-top-right-radius: 16px;
-  border-bottom-right-radius: 16px;
-}
-
-.feed-line {
-  left: calc(100% + 28px);
+/* Horizontal feed: junction → left edge of next-column card */
+.matchup-card:not(.final-match):nth-child(odd) .feed-line {
+  display: block;
+  left: calc(100% + 21px);
   top: calc(50% + (var(--round-gap) + 86px) / 2);
-  width: 14px;
-  border-top: 2px solid rgba(184, 214, 95, 0.46);
+  width: 21px;
+  border-top: 2px solid rgba(184, 214, 95, 0.58);
 }
 
-.matchup-card:hover,
-.matchup-card.selected {
+/* Left-entry arm: shows on every card that isn't in the first round */
+.matchup-card:not(.first-round)::before {
+  content: '';
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  width: 21px;
+  height: 2px;
+  margin-top: -1px;
+  background: rgba(184, 214, 95, 0.58);
+  pointer-events: none;
+}
+
+.matchup-card {
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.matchup-card:hover {
   border-color: rgba(184, 214, 95, 0.5);
   background: rgba(184, 214, 95, 0.07);
+}
+
+.matchup-card:active {
+  box-shadow: 0 0 0 3px rgba(184, 214, 95, 0.35);
+}
+
+.matchup-card.selected {
+  border-color: rgba(184, 214, 95, 0.7);
+  background: rgba(184, 214, 95, 0.09);
+  box-shadow:
+    0 0 0 2px rgba(184, 214, 95, 0.3),
+    0 4px 18px rgba(184, 214, 95, 0.15);
+  animation: card-select 0.25s ease-out;
+}
+
+@keyframes card-select {
+  0% { box-shadow: 0 0 0 6px rgba(184, 214, 95, 0.5); }
+  100% { box-shadow: 0 0 0 2px rgba(184, 214, 95, 0.3), 0 4px 18px rgba(184, 214, 95, 0.15); }
 }
 
 .matchup-player {
@@ -606,4 +661,112 @@ tbody tr:hover {
     gap: 30px;
     min-width: 1720px;
   }
+
+  /* Re-fit connector arms to the 30px mobile column gap (15 + 15 = 30) */
+  .matchup-card:not(.final-match):nth-child(odd) .top-join-line,
+  .matchup-card:not(.final-match):nth-child(even) .bottom-join-line {
+    width: 15px;
+  }
+
+  .matchup-card:not(.final-match):nth-child(odd) .feed-line {
+    left: calc(100% + 15px);
+    width: 15px;
+  }
+
+  .matchup-card:not(.first-round)::before {
+    width: 15px;
+  }
+
+  .view-tabs {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* ── Playground ─────────────────────────────────────────────────── */
+
+.pg-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.pg-hint {
+  margin: 0;
+  color: #7f8983;
+  font-size: 0.82rem;
+}
+
+.pg-reset {
+  flex-shrink: 0;
+  min-height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  background: transparent;
+  color: #9ca6a0;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0 10px;
+}
+
+.pg-reset:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #eef2ef;
+}
+
+/* pg-card overrides: cancel the default button cursor and hover highlight */
+.pg-card {
+  cursor: default;
+  padding: 4px;
+}
+
+.pg-card:hover {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(13, 17, 16, 0.84);
+}
+
+.pg-card.pg-completed {
+  border-color: rgba(255, 255, 255, 0.05);
+  background: rgba(10, 13, 12, 0.92);
+}
+
+.pg-player {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 28px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #dce3de;
+  cursor: pointer;
+  font-size: 0.86rem;
+  font-weight: 800;
+  padding: 0 5px;
+  text-align: left;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.pg-player:hover:not(:disabled):not(.pg-winner) {
+  background: rgba(184, 214, 95, 0.1);
+  color: #d9f28b;
+}
+
+.pg-player:disabled {
+  color: #3d4641;
+  cursor: default;
+}
+
+.pg-player.pg-winner {
+  background: rgba(184, 214, 95, 0.14);
+  color: #d9f28b;
+}
+
+/* Dim the loser's name once a pick is made */
+.pg-card.pg-completed .pg-player:not(.pg-winner) {
+  color: #2e3833;
 }

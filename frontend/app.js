@@ -1,9 +1,7 @@
 const API_URL = "http://localhost:8000/simulate";
 
-const draw = Array.from({ length: 128 }, (_, index) => {
-  return `Player ${String(index + 1).padStart(3, "0")}`;
-});
 
+const draw = ["Sinner J.", "Alcaraz C.", "Zverev A.", "Aliassime F.", "Shelton B.", "Minaur A.", "Medvedev D.", "Djokovic N.", "Fritz T.", "Cobolli F.", "Bublik A.", "Lehecka J.", "Rublev A.", "Ruud C.", "Musetti L.", "Mensik J.", "Darderi L.", "Khachanov K.", "Tien L.", "Vacherot V.", "Fils A.", "Fokina A.", "Jodar R.", "Rinderknech A.", "Fonseca J.", "Tiafoe F.", "Cerundolo F.", "Paul T.", "Norrie C.", "Etcheverry T.", "Tabilo A.", "Nakashima B.", "Humbert U.", "Arnaldi M.", "Buse I.", "Moutet C.", "Blockx A.", "Michelsen A.", "Navone M.", "Griekspoor T.", "Shapovalov D.", "Machac T.", "Munar J.", "Mannarino A.", "Cerundolo J.", "Cilic M.", "Majchrzak K.", "Bergs Z.", "Berrettini M.", "Kecmanovic M.", "Collignon R.", "Tirante T.", "Atmane T.", "Borges N.", "Landaluce M.", "Zandschulp B.", "Baez S.", "Carabelli C.", "Hanfmann Y.", "Korda S.", "Marozsan F.", "Burruchaga R.", "Rune H.", "Kopriva V.", "Sonego L.", "Quinn E.", "Medjedovic H.", "Kovacevic A.", "Svajda Z.", "Busta P.", "Vallejo A.", "Jong J.", "Brooksby J.", "Bellucci M.", "Royer V.", "Fucsovics M.", "Struff J.", "Duckworth J.", "Cazaux A.", "Tsitsipas S.", "Altmaier D.", "Prizmic D.", "Aguilar D.", "Diallo G.", "Nava E.", "Giron M.", "Perricard G.", "Comesana F.", "Bonzi B.", "Popyrin A.", "Walton A.", "Trungelliti M.", "Faria J.", "Halys Q.", "Spizzirri E.", "Shevchenko A.", "Shimabukuro S.", "Vukic A.", "Wu Y.", "Assche L.", "Molcan A.", "Opelka R.", "Hurkacz H.", "Hijikata R.", "Dzumhur D.", "Choinski J.", "Yunchaokete B.", "Damm M.", "Wong C.", "Svrcina D.", "Wawrinka S.", "Droguet T.", "Draper J.", "Kypson P.", "Agut R.", "Riedi L.", "Gaston H.", "Basilashvili N.", "Garin C.", "Ruiz P.", "Kjaer N.", "Rocha H.", "Ofner S.", "Maestrelli F.", "Muller A.", "Sweeny D.", "Acosta F.", "Mcdonald M."];
 const ROUND_NAMES = ["Round of 128", "Round of 64", "Round of 32", "Round of 16", "Quarterfinal", "Semifinal", "Final"];
 
 function getRoundProbability(rounds, offsetFromEnd) {
@@ -89,6 +87,50 @@ function buildBracketRounds(result) {
   });
 }
 
+function getPlaygroundWinner(picks, roundIndex, start) {
+  const matchId = `${roundIndex}-${start}`;
+  const pick = picks[matchId];
+  if (roundIndex === 1) {
+    if (pick === "left") return draw[start];
+    if (pick === "right") return draw[start + 1];
+    return null;
+  }
+  const halfSize = 2 ** (roundIndex - 1);
+  if (pick === "left") return getPlaygroundWinner(picks, roundIndex - 1, start);
+  if (pick === "right") return getPlaygroundWinner(picks, roundIndex - 1, start + halfSize);
+  return null;
+}
+
+function buildPlaygroundRounds(picks) {
+  const totalRounds = Math.log2(draw.length);
+  return Array.from({ length: totalRounds }, (_, roundOffset) => {
+    const roundIndex = roundOffset + 1;
+    const groupSize = 2 ** roundIndex;
+    const halfSize = groupSize / 2;
+    const matchups = [];
+    for (let start = 0; start < draw.length; start += groupSize) {
+      let leftName, rightName;
+      if (roundIndex === 1) {
+        leftName = draw[start];
+        rightName = draw[start + 1];
+      } else {
+        leftName = getPlaygroundWinner(picks, roundIndex - 1, start);
+        rightName = getPlaygroundWinner(picks, roundIndex - 1, start + halfSize);
+      }
+      matchups.push({
+        id: `${roundIndex}-${start}`,
+        round: ROUND_NAMES[roundOffset],
+        roundIndex,
+        isFinal: roundIndex === totalRounds,
+        leftName,
+        rightName,
+        pick: picks[`${roundIndex}-${start}`],
+      });
+    }
+    return { name: ROUND_NAMES[roundOffset], matchups };
+  });
+}
+
 function LeaderboardRow({ player, index }) {
   return React.createElement(
     "tr",
@@ -120,7 +162,7 @@ function MatchupCard({ matchup, selected, onSelect }) {
   return React.createElement(
     "button",
     {
-      className: `matchup-card ${matchup.isFinal ? "final-match" : ""} ${selected ? "selected" : ""}`,
+      className: `matchup-card${matchup.isFinal ? " final-match" : ""}${selected ? " selected" : ""}${matchup.roundIndex === 1 ? " first-round" : ""}`,
       type: "button",
       onClick: () => onSelect(matchup),
     },
@@ -131,6 +173,41 @@ function MatchupCard({ matchup, selected, onSelect }) {
     React.createElement(MatchupPlayer, { player: matchup.left }),
     React.createElement("div", { className: "matchup-divider" }),
     React.createElement(MatchupPlayer, { player: matchup.right })
+  );
+}
+
+function PlaygroundMatchupCard({ matchup, onPick }) {
+  const { id, leftName, rightName, pick, isFinal, roundIndex } = matchup;
+  return React.createElement(
+    "div",
+    {
+      className: `matchup-card pg-card${isFinal ? " final-match" : ""}${roundIndex === 1 ? " first-round" : ""}${pick !== undefined ? " pg-completed" : ""}`,
+    },
+    React.createElement("span", { className: "top-join-line" }),
+    React.createElement("span", { className: "bottom-join-line" }),
+    React.createElement("span", { className: "vertical-join-line" }),
+    React.createElement("span", { className: "feed-line" }),
+    React.createElement(
+      "button",
+      {
+        className: `pg-player${pick === "left" ? " pg-winner" : ""}`,
+        type: "button",
+        disabled: !leftName,
+        onClick: () => onPick(id, "left"),
+      },
+      leftName || "TBD"
+    ),
+    React.createElement("div", { className: "matchup-divider" }),
+    React.createElement(
+      "button",
+      {
+        className: `pg-player${pick === "right" ? " pg-winner" : ""}`,
+        type: "button",
+        disabled: !rightName,
+        onClick: () => onPick(id, "right"),
+      },
+      rightName || "TBD"
+    )
   );
 }
 
@@ -200,25 +277,46 @@ function MatchupDetail({ matchup }) {
 }
 
 function BracketView({ rounds, selectedMatchup, onSelectMatchup }) {
-  function centerRound(roundOffset) {
+  // Zoom out progressively for later rounds so the compact structure is visible.
+  // R128–R32 stay at 1:1; QF/SF/Final compress to give context without losing cards entirely.
+  const ROUND_ZOOMS = [1, 1, 1, 0.85, 0.7, 0.55, 1];
+  const [bracketZoom, setBracketZoom] = React.useState(1);
+  const [activeRound, setActiveRound] = React.useState(null);
+
+  function scrollToRound(roundOffset) {
     const column = document.querySelector(`[data-round-index="${roundOffset}"]`);
+    if (!column) return;
 
-    if (column) {
-      column.scrollIntoView({
-        behavior: "smooth",
-        block: "nearest",
-        inline: "center",
-      });
+    // Center the column horizontally in the scroll container
+    column.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
 
-      const columnBounds = column.getBoundingClientRect();
-      const columnMiddle = window.scrollY + columnBounds.top + columnBounds.height / 2;
-      const viewportMiddle = window.innerHeight / 2;
+    // Measure the ACTUAL card bounds — not the full column (which includes empty gap space)
+    const cards = Array.from(column.querySelectorAll(".matchup-card"));
+    if (!cards.length) return;
 
-      window.scrollTo({
-        top: Math.max(0, columnMiddle - viewportMiddle),
-        behavior: "smooth",
-      });
-    }
+    const firstRect = cards[0].getBoundingClientRect();
+    const lastRect = cards[cards.length - 1].getBoundingClientRect();
+    const contentTop = window.scrollY + firstRect.top;
+    const contentBottom = window.scrollY + lastRect.bottom;
+    const contentHeight = contentBottom - contentTop;
+    const contentMid = (contentTop + contentBottom) / 2;
+    const vh = window.innerHeight;
+
+    // If all cards in this round fit in the viewport, center them.
+    // Otherwise, snap to the first card (avoids landing on an empty gap for SF/QF/Final).
+    const targetY =
+      contentHeight <= vh * 0.85
+        ? Math.max(0, contentMid - vh / 2)
+        : Math.max(0, contentTop - 80);
+
+    window.scrollTo({ top: targetY, behavior: "smooth" });
+  }
+
+  function centerRound(roundOffset) {
+    setActiveRound(roundOffset);
+    setBracketZoom(ROUND_ZOOMS[roundOffset] ?? 1);
+    // Wait for React to re-render with the new zoom before measuring card positions
+    requestAnimationFrame(() => requestAnimationFrame(() => scrollToRound(roundOffset)));
   }
 
   return React.createElement(
@@ -227,7 +325,7 @@ function BracketView({ rounds, selectedMatchup, onSelectMatchup }) {
     React.createElement(MatchupDetail, { matchup: selectedMatchup }),
     React.createElement(
       "div",
-      { className: "bracket-scroll" },
+      { className: "bracket-scroll", style: { zoom: bracketZoom } },
       React.createElement(
         "div",
         { className: "bracket-grid" },
@@ -246,7 +344,7 @@ function BracketView({ rounds, selectedMatchup, onSelectMatchup }) {
             React.createElement(
               "button",
               {
-                className: "round-label",
+                className: `round-label${activeRound === roundOffset ? " active" : ""}`,
                 type: "button",
                 onClick: () => centerRound(roundOffset),
                 title: `Center ${round.name}`,
@@ -262,6 +360,119 @@ function BracketView({ rounds, selectedMatchup, onSelectMatchup }) {
                   matchup,
                   selected: selectedMatchup && selectedMatchup.id === matchup.id,
                   onSelect: onSelectMatchup,
+                })
+              )
+            )
+          )
+        )
+      )
+    )
+  );
+}
+
+function PlaygroundView() {
+  const [picks, setPicks] = React.useState({});
+  const ROUND_ZOOMS = [1, 1, 1, 0.85, 0.7, 0.55, 1];
+  const [bracketZoom, setBracketZoom] = React.useState(1);
+  const [activeRound, setActiveRound] = React.useState(null);
+  const totalRounds = Math.log2(draw.length);
+
+  const rounds = React.useMemo(() => buildPlaygroundRounds(picks), [picks]);
+
+  function handlePick(matchId, side) {
+    setPicks((prev) => {
+      const [roundStr, startStr] = matchId.split("-");
+      const roundIndex = parseInt(roundStr);
+      const start = parseInt(startStr);
+      const newPicks = { ...prev };
+      if (newPicks[matchId] === side) {
+        delete newPicks[matchId];
+      } else {
+        newPicks[matchId] = side;
+      }
+      for (let r = roundIndex + 1; r <= totalRounds; r++) {
+        const groupSize = 2 ** r;
+        const s = Math.floor(start / groupSize) * groupSize;
+        delete newPicks[`${r}-${s}`];
+      }
+      return newPicks;
+    });
+  }
+
+  function scrollToRound(roundOffset) {
+    const column = document.querySelector(`[data-pg-round="${roundOffset}"]`);
+    if (!column) return;
+    column.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+    const cards = Array.from(column.querySelectorAll(".matchup-card"));
+    if (!cards.length) return;
+    const firstRect = cards[0].getBoundingClientRect();
+    const lastRect = cards[cards.length - 1].getBoundingClientRect();
+    const contentTop = window.scrollY + firstRect.top;
+    const contentBottom = window.scrollY + lastRect.bottom;
+    const contentHeight = contentBottom - contentTop;
+    const contentMid = (contentTop + contentBottom) / 2;
+    const vh = window.innerHeight;
+    const targetY =
+      contentHeight <= vh * 0.85
+        ? Math.max(0, contentMid - vh / 2)
+        : Math.max(0, contentTop - 80);
+    window.scrollTo({ top: targetY, behavior: "smooth" });
+  }
+
+  function centerRound(roundOffset) {
+    setActiveRound(roundOffset);
+    setBracketZoom(ROUND_ZOOMS[roundOffset] ?? 1);
+    requestAnimationFrame(() => requestAnimationFrame(() => scrollToRound(roundOffset)));
+  }
+
+  return React.createElement(
+    "section",
+    { className: "bracket-section" },
+    React.createElement(
+      "div",
+      { className: "pg-toolbar" },
+      React.createElement("p", { className: "pg-hint" }, "Click a player to advance them through the bracket. Click again to deselect."),
+      React.createElement(
+        "button",
+        { className: "pg-reset", type: "button", onClick: () => setPicks({}) },
+        "Reset"
+      )
+    ),
+    React.createElement(
+      "div",
+      { className: "bracket-scroll", style: { zoom: bracketZoom } },
+      React.createElement(
+        "div",
+        { className: "bracket-grid" },
+        rounds.map((round, roundOffset) =>
+          React.createElement(
+            "div",
+            {
+              className: "round-column",
+              key: round.name,
+              "data-pg-round": roundOffset,
+              style: {
+                "--round-gap": `${(86 + 10) * 2 ** roundOffset - 86}px`,
+                "--round-offset": `${((86 + 10) * (2 ** roundOffset - 1)) / 2}px`,
+              },
+            },
+            React.createElement(
+              "button",
+              {
+                className: `round-label${activeRound === roundOffset ? " active" : ""}`,
+                type: "button",
+                onClick: () => centerRound(roundOffset),
+              },
+              round.name
+            ),
+            React.createElement(
+              "div",
+              { className: "round-matchups" },
+              round.matchups.map((matchup) =>
+                React.createElement(PlaygroundMatchupCard, {
+                  key: matchup.id,
+                  matchup,
+                  onPick: handlePick,
                 })
               )
             )
@@ -371,7 +582,7 @@ function App() {
       React.createElement(
         "div",
         null,
-        React.createElement("p", { className: "eyebrow" }, "Wimbledon 2026"),
+        React.createElement("p", { className: "eyebrow" }, "Currently Analyzing: Wimbledon 2026"),
         React.createElement("h1", null, "Tournament Predictor")
       ),
       React.createElement(
@@ -456,6 +667,15 @@ function App() {
               onClick: () => setActiveTab("leaderboard"),
             },
             "Leaderboard"
+          ),
+          React.createElement(
+            "button",
+            {
+              className: activeTab === "playground" ? "active" : "",
+              type: "button",
+              onClick: () => setActiveTab("playground"),
+            },
+            "Playground"
           )
         ),
         activeTab === "bracket"
@@ -464,7 +684,9 @@ function App() {
               selectedMatchup,
               onSelectMatchup: setSelectedMatchup,
             })
-          : React.createElement(LeaderboardView, { rows })
+          : activeTab === "leaderboard"
+          ? React.createElement(LeaderboardView, { rows })
+          : React.createElement(PlaygroundView)
       )
   );
 }
