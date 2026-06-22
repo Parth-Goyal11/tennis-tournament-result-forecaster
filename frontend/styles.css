@@ -304,6 +304,58 @@ tbody tr:hover {
   margin-top: 16px;
 }
 
+.round-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 10px 0 6px;
+}
+
+.round-nav-arrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: transparent;
+  color: #b8d65f;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 7px 14px;
+  text-transform: uppercase;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.round-nav-arrow span {
+  color: #9ca6a0;
+}
+
+.round-nav-arrow:not(:disabled):hover {
+  border-color: rgba(184, 214, 95, 0.42);
+  background: rgba(184, 214, 95, 0.07);
+  color: #d9f28b;
+}
+
+.round-nav-arrow:not(:disabled):hover span {
+  color: #d9f28b;
+}
+
+.round-nav-arrow:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+
+.round-nav-label {
+  color: #eef2ef;
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
 .matchup-detail {
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(13, 17, 16, 0.84);
@@ -678,8 +730,64 @@ tbody tr:hover {
   }
 
   .view-tabs {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
   }
+}
+
+/* ── Match summary (Bracket tab, round 1 detail) ────────────────── */
+
+.match-summary {
+  margin-top: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.035);
+  padding: 14px;
+}
+
+.match-summary h3 {
+  color: #9ca6a0;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  margin: 0 0 10px;
+  text-transform: uppercase;
+}
+
+.summary-text {
+  margin: 0;
+  color: #dce3de;
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+
+.summary-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #7f8983;
+  font-size: 0.84rem;
+}
+
+.loader-sm {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+}
+
+/* ── TBD cards (Bracket tab, rounds 2+) ─────────────────────────── */
+
+.tbd-card {
+  cursor: pointer;
+}
+
+.tbd-card:hover {
+  border-color: rgba(184, 214, 95, 0.3);
+  background: rgba(184, 214, 95, 0.04);
+}
+
+.tbd-name {
+  color: #4a5450;
+  font-style: italic;
 }
 
 /* ── Playground ─────────────────────────────────────────────────── */

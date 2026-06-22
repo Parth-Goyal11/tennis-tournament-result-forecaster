@@ -38,14 +38,14 @@ function getBestPlayer(result, players, roundIndex) {
     .sort((a, b) => b.previousProbability - a.previousProbability || b.nextProbability - a.nextProbability)[0];
 }
 
-function getTopCandidates(result, players, roundIndex) {
+function getTopCandidates(result, players, roundIndex, count = 4) {
   return players
     .map((name) => ({
       name,
       previousProbability: getRoundValue(result, name, roundIndex - 1),
     }))
     .sort((a, b) => b.previousProbability - a.previousProbability)
-    .slice(0, 4);
+    .slice(0, count);
 }
 
 function buildBracketRounds(result) {
@@ -68,13 +68,16 @@ function buildBracketRounds(result) {
       const leftPlayer = getBestPlayer(result, leftPlayers, roundIndex);
       const rightPlayer = getBestPlayer(result, rightPlayers, roundIndex);
 
+      const matchTotal = (leftPlayer?.matchProbability ?? 0) + (rightPlayer?.matchProbability ?? 0);
+      const leftProb = matchTotal > 0 ? leftPlayer.matchProbability / matchTotal : 0.5;
+
       matchups.push({
         id: `${roundIndex}-${start}`,
         round: ROUND_NAMES[roundOffset],
         roundIndex,
         isFinal: roundIndex === totalRounds,
-        left: leftPlayer,
-        right: rightPlayer,
+        left: { ...leftPlayer, matchProbability: leftProb },
+        right: { ...rightPlayer, matchProbability: 1 - leftProb },
         leftCandidates: getTopCandidates(result, leftPlayers, roundIndex),
         rightCandidates: getTopCandidates(result, rightPlayers, roundIndex),
       });
@@ -84,6 +87,51 @@ function buildBracketRounds(result) {
       name: ROUND_NAMES[roundOffset],
       matchups,
     };
+  });
+}
+
+function buildPreloadedBracketRounds(result) {
+  if (!result) return [];
+  const totalRounds = Math.log2(draw.length);
+  return Array.from({ length: totalRounds }, (_, roundOffset) => {
+    const roundIndex = roundOffset + 1;
+    const groupSize = 2 ** roundIndex;
+    const halfSize = groupSize / 2;
+    const matchups = [];
+    for (let start = 0; start < draw.length; start += groupSize) {
+      if (roundIndex === 1) {
+        const leftPlayers = draw.slice(start, start + halfSize);
+        const rightPlayers = draw.slice(start + halfSize, start + groupSize);
+        const leftPlayer = getBestPlayer(result, leftPlayers, roundIndex);
+        const rightPlayer = getBestPlayer(result, rightPlayers, roundIndex);
+        const matchTotal = (leftPlayer?.matchProbability ?? 0) + (rightPlayer?.matchProbability ?? 0);
+        const leftProb = matchTotal > 0 ? leftPlayer.matchProbability / matchTotal : 0.5;
+        matchups.push({
+          id: `${roundIndex}-${start}`,
+          round: ROUND_NAMES[roundOffset],
+          roundIndex,
+          isFinal: false,
+          isPreloaded: true,
+          left: { ...leftPlayer, matchProbability: leftProb },
+          right: { ...rightPlayer, matchProbability: 1 - leftProb },
+          leftCandidates: getTopCandidates(result, leftPlayers, roundIndex, 6),
+          rightCandidates: getTopCandidates(result, rightPlayers, roundIndex, 6),
+        });
+      } else {
+        const leftPlayers = draw.slice(start, start + halfSize);
+        const rightPlayers = draw.slice(start + halfSize, start + groupSize);
+        matchups.push({
+          id: `${roundIndex}-${start}`,
+          round: ROUND_NAMES[roundOffset],
+          roundIndex,
+          isFinal: roundIndex === totalRounds,
+          isPreloaded: false,
+          leftCandidates: getTopCandidates(result, leftPlayers, roundIndex, 6),
+          rightCandidates: getTopCandidates(result, rightPlayers, roundIndex, 6),
+        });
+      }
+    }
+    return { name: ROUND_NAMES[roundOffset], matchups };
   });
 }
 
@@ -211,6 +259,28 @@ function PlaygroundMatchupCard({ matchup, onPick }) {
   );
 }
 
+function TBDMatchupCard({ matchup, selected, onSelect }) {
+  return React.createElement(
+    "button",
+    {
+      className: `matchup-card tbd-card${matchup.isFinal ? " final-match" : ""}${selected ? " selected" : ""}`,
+      type: "button",
+      onClick: () => onSelect(matchup),
+    },
+    React.createElement("span", { className: "top-join-line" }),
+    React.createElement("span", { className: "bottom-join-line" }),
+    React.createElement("span", { className: "vertical-join-line" }),
+    React.createElement("span", { className: "feed-line" }),
+    React.createElement("div", { className: "matchup-player" },
+      React.createElement("span", { className: "matchup-name tbd-name" }, "TBD")
+    ),
+    React.createElement("div", { className: "matchup-divider" }),
+    React.createElement("div", { className: "matchup-player" },
+      React.createElement("span", { className: "matchup-name tbd-name" }, "TBD")
+    )
+  );
+}
+
 function CandidateList({ title, candidates }) {
   return React.createElement(
     "div",
@@ -231,7 +301,7 @@ function CandidateList({ title, candidates }) {
   );
 }
 
-function MatchupDetail({ matchup }) {
+function MatchupDetail({ matchup, summary, summaryLoading }) {
   if (!matchup) {
     return React.createElement(
       "section",
@@ -247,9 +317,11 @@ function MatchupDetail({ matchup }) {
       "div",
       { className: "detail-heading" },
       React.createElement("span", null, matchup.round),
-      React.createElement("strong", null, `${matchup.left.name} vs ${matchup.right.name}`)
+      matchup.left
+        ? React.createElement("strong", null, `${matchup.left.name} vs ${matchup.right.name}`)
+        : React.createElement("strong", null, "Most Likely Contenders")
     ),
-    React.createElement(
+    matchup.left && React.createElement(
       "div",
       { className: "detail-grid" },
       React.createElement(
@@ -270,62 +342,93 @@ function MatchupDetail({ matchup }) {
     React.createElement(
       "div",
       { className: "candidate-grid" },
-      React.createElement(CandidateList, { title: "Left side contenders", candidates: matchup.leftCandidates }),
-      React.createElement(CandidateList, { title: "Right side contenders", candidates: matchup.rightCandidates })
+      React.createElement(CandidateList, { title: "Most likely — left half", candidates: matchup.leftCandidates }),
+      React.createElement(CandidateList, { title: "Most likely — right half", candidates: matchup.rightCandidates })
+    ),
+    matchup.left && React.createElement(
+      "div",
+      { className: "match-summary" },
+      React.createElement("h3", null, "Match Preview"),
+      summaryLoading
+        ? React.createElement(
+            "div",
+            { className: "summary-loading" },
+            React.createElement("div", { className: "loader loader-sm" }),
+            React.createElement("span", null, "Generating preview…")
+          )
+        : summary
+        ? React.createElement("p", { className: "summary-text" }, summary)
+        : null
     )
   );
 }
 
 function BracketView({ rounds, selectedMatchup, onSelectMatchup }) {
-  // Zoom out progressively for later rounds so the compact structure is visible.
-  // R128–R32 stay at 1:1; QF/SF/Final compress to give context without losing cards entirely.
-  const ROUND_ZOOMS = [1, 1, 1, 0.85, 0.7, 0.55, 1];
-  const [bracketZoom, setBracketZoom] = React.useState(1);
-  const [activeRound, setActiveRound] = React.useState(null);
+  const [activeRound, setActiveRound] = React.useState(0);
+  const detailRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (selectedMatchup && detailRef.current) {
+      detailRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [selectedMatchup]);
 
   function scrollToRound(roundOffset) {
     const column = document.querySelector(`[data-round-index="${roundOffset}"]`);
     if (!column) return;
-
-    // Center the column horizontally in the scroll container
     column.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
-
-    // Measure the ACTUAL card bounds — not the full column (which includes empty gap space)
-    const cards = Array.from(column.querySelectorAll(".matchup-card"));
-    if (!cards.length) return;
-
-    const firstRect = cards[0].getBoundingClientRect();
-    const lastRect = cards[cards.length - 1].getBoundingClientRect();
-    const contentTop = window.scrollY + firstRect.top;
-    const contentBottom = window.scrollY + lastRect.bottom;
-    const contentHeight = contentBottom - contentTop;
-    const contentMid = (contentTop + contentBottom) / 2;
-    const vh = window.innerHeight;
-
-    // If all cards in this round fit in the viewport, center them.
-    // Otherwise, snap to the first card (avoids landing on an empty gap for SF/QF/Final).
-    const targetY =
-      contentHeight <= vh * 0.85
-        ? Math.max(0, contentMid - vh / 2)
-        : Math.max(0, contentTop - 80);
-
-    window.scrollTo({ top: targetY, behavior: "smooth" });
   }
 
   function centerRound(roundOffset) {
     setActiveRound(roundOffset);
-    setBracketZoom(ROUND_ZOOMS[roundOffset] ?? 1);
-    // Wait for React to re-render with the new zoom before measuring card positions
-    requestAnimationFrame(() => requestAnimationFrame(() => scrollToRound(roundOffset)));
+    requestAnimationFrame(() => scrollToRound(roundOffset));
   }
+
+  const canGoPrev = activeRound > 0;
+  const canGoNext = activeRound < rounds.length - 1;
+  const prevLabel = canGoPrev ? ROUND_NAMES[activeRound - 1] : "";
+  const nextLabel = canGoNext ? ROUND_NAMES[activeRound + 1] : "";
 
   return React.createElement(
     "section",
     { className: "bracket-section" },
-    React.createElement(MatchupDetail, { matchup: selectedMatchup }),
+    React.createElement("div", { ref: detailRef },
+      React.createElement(MatchupDetail, { matchup: selectedMatchup })
+    ),
     React.createElement(
       "div",
-      { className: "bracket-scroll", style: { zoom: bracketZoom } },
+      { className: "round-nav" },
+      React.createElement(
+        "button",
+        {
+          className: "round-nav-arrow",
+          type: "button",
+          disabled: !canGoPrev,
+          onClick: () => canGoPrev && centerRound(activeRound - 1),
+        },
+        "◀",
+        React.createElement("span", null, prevLabel)
+      ),
+      React.createElement(
+        "span",
+        { className: "round-nav-label" },
+        ROUND_NAMES[activeRound]
+      ),
+      React.createElement(
+        "button",
+        {
+          className: "round-nav-arrow",
+          type: "button",
+          disabled: !canGoNext,
+          onClick: () => canGoNext && centerRound(activeRound + 1),
+        },
+        React.createElement("span", null, nextLabel),
+        "▶"
+      )
+    ),
+    React.createElement(
+      "div",
+      { className: "bracket-scroll" },
       React.createElement(
         "div",
         { className: "bracket-grid" },
@@ -370,10 +473,150 @@ function BracketView({ rounds, selectedMatchup, onSelectMatchup }) {
   );
 }
 
+function PreloadedBracketView({ rounds, selectedMatchup, onSelectMatchup }) {
+  const [activeRound, setActiveRound] = React.useState(0);
+  const [summary, setSummary] = React.useState(null);
+  const [summaryLoading, setSummaryLoading] = React.useState(false);
+  const summaryRequestRef = React.useRef(0);
+  const detailRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (selectedMatchup && detailRef.current) {
+      detailRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [selectedMatchup]);
+
+  React.useEffect(() => {
+    if (!selectedMatchup || !selectedMatchup.isPreloaded) {
+      setSummary(null);
+      setSummaryLoading(false);
+      return;
+    }
+    const requestId = ++summaryRequestRef.current;
+    setSummary(null);
+    setSummaryLoading(true);
+    const p1 = encodeURIComponent(selectedMatchup.left.name);
+    const p2 = encodeURIComponent(selectedMatchup.right.name);
+    fetch(`http://localhost:8000/summary?player1=${p1}&player2=${p2}`, { method: "POST" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (summaryRequestRef.current === requestId) {
+          setSummary(data.summary);
+          setSummaryLoading(false);
+        }
+      })
+      .catch(() => {
+        if (summaryRequestRef.current === requestId) {
+          setSummaryLoading(false);
+        }
+      });
+  }, [selectedMatchup]);
+
+  function scrollToRound(roundOffset) {
+    const column = document.querySelector(`[data-preloaded-round="${roundOffset}"]`);
+    if (!column) return;
+    column.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }
+
+  function centerRound(roundOffset) {
+    setActiveRound(roundOffset);
+    requestAnimationFrame(() => scrollToRound(roundOffset));
+  }
+
+  const canGoPrev = activeRound > 0;
+  const canGoNext = activeRound < rounds.length - 1;
+  const prevLabel = canGoPrev ? ROUND_NAMES[activeRound - 1] : "";
+  const nextLabel = canGoNext ? ROUND_NAMES[activeRound + 1] : "";
+
+  return React.createElement(
+    "section",
+    { className: "bracket-section" },
+    React.createElement("div", { ref: detailRef },
+      React.createElement(MatchupDetail, { matchup: selectedMatchup, summary, summaryLoading })
+    ),
+    React.createElement(
+      "div",
+      { className: "round-nav" },
+      React.createElement(
+        "button",
+        {
+          className: "round-nav-arrow",
+          type: "button",
+          disabled: !canGoPrev,
+          onClick: () => canGoPrev && centerRound(activeRound - 1),
+        },
+        "◀",
+        React.createElement("span", null, prevLabel)
+      ),
+      React.createElement("span", { className: "round-nav-label" }, ROUND_NAMES[activeRound]),
+      React.createElement(
+        "button",
+        {
+          className: "round-nav-arrow",
+          type: "button",
+          disabled: !canGoNext,
+          onClick: () => canGoNext && centerRound(activeRound + 1),
+        },
+        React.createElement("span", null, nextLabel),
+        "▶"
+      )
+    ),
+    React.createElement(
+      "div",
+      { className: "bracket-scroll" },
+      React.createElement(
+        "div",
+        { className: "bracket-grid" },
+        rounds.map((round, roundOffset) =>
+          React.createElement(
+            "div",
+            {
+              className: "round-column",
+              key: round.name,
+              "data-preloaded-round": roundOffset,
+              style: {
+                "--round-gap": `${(86 + 10) * 2 ** roundOffset - 86}px`,
+                "--round-offset": `${((86 + 10) * (2 ** roundOffset - 1)) / 2}px`,
+              },
+            },
+            React.createElement(
+              "button",
+              {
+                className: `round-label${activeRound === roundOffset ? " active" : ""}`,
+                type: "button",
+                onClick: () => centerRound(roundOffset),
+                title: `Center ${round.name}`,
+              },
+              round.name
+            ),
+            React.createElement(
+              "div",
+              { className: "round-matchups" },
+              round.matchups.map((matchup) =>
+                matchup.isPreloaded
+                  ? React.createElement(MatchupCard, {
+                      key: matchup.id,
+                      matchup,
+                      selected: selectedMatchup && selectedMatchup.id === matchup.id,
+                      onSelect: onSelectMatchup,
+                    })
+                  : React.createElement(TBDMatchupCard, {
+                      key: matchup.id,
+                      matchup,
+                      selected: selectedMatchup && selectedMatchup.id === matchup.id,
+                      onSelect: onSelectMatchup,
+                    })
+              )
+            )
+          )
+        )
+      )
+    )
+  );
+}
+
 function PlaygroundView() {
   const [picks, setPicks] = React.useState({});
-  const ROUND_ZOOMS = [1, 1, 1, 0.85, 0.7, 0.55, 1];
-  const [bracketZoom, setBracketZoom] = React.useState(1);
   const [activeRound, setActiveRound] = React.useState(null);
   const totalRounds = Math.log2(draw.length);
 
@@ -403,26 +646,11 @@ function PlaygroundView() {
     const column = document.querySelector(`[data-pg-round="${roundOffset}"]`);
     if (!column) return;
     column.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
-    const cards = Array.from(column.querySelectorAll(".matchup-card"));
-    if (!cards.length) return;
-    const firstRect = cards[0].getBoundingClientRect();
-    const lastRect = cards[cards.length - 1].getBoundingClientRect();
-    const contentTop = window.scrollY + firstRect.top;
-    const contentBottom = window.scrollY + lastRect.bottom;
-    const contentHeight = contentBottom - contentTop;
-    const contentMid = (contentTop + contentBottom) / 2;
-    const vh = window.innerHeight;
-    const targetY =
-      contentHeight <= vh * 0.85
-        ? Math.max(0, contentMid - vh / 2)
-        : Math.max(0, contentTop - 80);
-    window.scrollTo({ top: targetY, behavior: "smooth" });
   }
 
   function centerRound(roundOffset) {
     setActiveRound(roundOffset);
-    setBracketZoom(ROUND_ZOOMS[roundOffset] ?? 1);
-    requestAnimationFrame(() => requestAnimationFrame(() => scrollToRound(roundOffset)));
+    requestAnimationFrame(() => scrollToRound(roundOffset));
   }
 
   return React.createElement(
@@ -440,7 +668,7 @@ function PlaygroundView() {
     ),
     React.createElement(
       "div",
-      { className: "bracket-scroll", style: { zoom: bracketZoom } },
+      { className: "bracket-scroll" },
       React.createElement(
         "div",
         { className: "bracket-grid" },
@@ -524,6 +752,7 @@ function App() {
   const [simulationResult, setSimulationResult] = React.useState(null);
   const [activeTab, setActiveTab] = React.useState("bracket");
   const [selectedMatchup, setSelectedMatchup] = React.useState(null);
+  const [selectedPreloadedMatchup, setSelectedPreloadedMatchup] = React.useState(null);
   const [status, setStatus] = React.useState("loading");
   const [error, setError] = React.useState("");
 
@@ -544,6 +773,7 @@ function App() {
 
       const result = await response.json();
       const bracketRounds = buildBracketRounds(result);
+      const preloadedRounds = buildPreloadedBracketRounds(result);
       const leaderboardRows = Object.entries(result)
         .map(([name, rounds], index) => ({
           name,
@@ -557,6 +787,7 @@ function App() {
 
       setSimulationResult(result);
       setSelectedMatchup(bracketRounds[0] ? bracketRounds[0].matchups[0] : null);
+      setSelectedPreloadedMatchup(preloadedRounds[0] ? preloadedRounds[0].matchups[0] : null);
       setRows(leaderboardRows);
       setStatus("ready");
     } catch (requestError) {
@@ -572,6 +803,7 @@ function App() {
   }, []);
 
   const bracketRounds = React.useMemo(() => buildBracketRounds(simulationResult), [simulationResult]);
+  const preloadedBracketRounds = React.useMemo(() => buildPreloadedBracketRounds(simulationResult), [simulationResult]);
 
   return React.createElement(
     "main",
@@ -662,6 +894,15 @@ function App() {
           React.createElement(
             "button",
             {
+              className: activeTab === "odds-bracket" ? "active" : "",
+              type: "button",
+              onClick: () => setActiveTab("odds-bracket"),
+            },
+            "Odds-Simulated Bracket"
+          ),
+          React.createElement(
+            "button",
+            {
               className: activeTab === "leaderboard" ? "active" : "",
               type: "button",
               onClick: () => setActiveTab("leaderboard"),
@@ -679,6 +920,12 @@ function App() {
           )
         ),
         activeTab === "bracket"
+          ? React.createElement(PreloadedBracketView, {
+              rounds: preloadedBracketRounds,
+              selectedMatchup: selectedPreloadedMatchup,
+              onSelectMatchup: setSelectedPreloadedMatchup,
+            })
+          : activeTab === "odds-bracket"
           ? React.createElement(BracketView, {
               rounds: bracketRounds,
               selectedMatchup,

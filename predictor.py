@@ -15,15 +15,29 @@ df["Date"] = pd.to_datetime(df["Date"])
 with open("tennis_elos_pretty.json") as f:
     players = json.load(f)
 
-# Pre-index matches by player so per-player lookups skip the full CSV scan.
-_player_matches: dict = {}
-for _idx, _row in df.iterrows():
-    for _p in (_row["Player_1"], _row["Player_2"]):
-        if _p not in _player_matches:
-            _player_matches[_p] = []
-        _player_matches[_p].append(_idx)
+# Pre-index matches by player — avoid iterrows() (slow); use vectorized iteration instead.
+from collections import defaultdict as _defaultdict
+_player_idx: dict = _defaultdict(list)
+for _idx, _p1, _p2 in zip(df.index, df["Player_1"], df["Player_2"]):
+    _player_idx[_p1].append(_idx)
+    _player_idx[_p2].append(_idx)
 _player_match_dfs: dict = {p: df.loc[idxs].sort_values("Date", ascending=False)
-                            for p, idxs in _player_matches.items()}
+                            for p, idxs in _player_idx.items()}
+
+# Build H2H win table once at startup so each lookup is O(1).
+_cutoff_year = datetime.now().year - 2
+_h2h: dict = _defaultdict(lambda: [0, 0])  # (p1, p2) -> [p1_wins, total]
+for _p1, _p2, _winner, _year in zip(
+    df["Player_1"], df["Player_2"], df["Winner"], df["Date"].dt.year
+):
+    if _year < _cutoff_year:
+        continue
+    _h2h[(_p1, _p2)][1] += 1
+    _h2h[(_p2, _p1)][1] += 1
+    if _winner == _p1:
+        _h2h[(_p1, _p2)][0] += 1
+    else:
+        _h2h[(_p2, _p1)][0] += 1
 
 
 
@@ -43,15 +57,8 @@ def last_10_matches(player):
     return _player_match_dfs.get(player, df.iloc[0:0]).head(10)
 
 def head_to_head(player1, player2):
-    p1_matches = _player_match_dfs.get(player1, df.iloc[0:0])
-    cutoff_year = datetime.now().year - 2
-    matches = p1_matches[
-        ((p1_matches["Player_2"] == player2) | (p1_matches["Player_1"] == player2))
-        & (p1_matches["Date"].dt.year >= cutoff_year)
-    ]
-    oneWins = (matches["Winner"] == player1).sum()
-    twoWins = (matches["Winner"] == player2).sum()
-    return round(((oneWins + 1) / (oneWins + twoWins + 2)), 4)
+    wins, total = _h2h.get((player1, player2), [0, 0])
+    return round((wins + 1) / (total + 2), 4)
 
 def head_to_head_train(player1, player2, match_date):
     matches = df[
