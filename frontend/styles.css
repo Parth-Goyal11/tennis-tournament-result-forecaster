@@ -754,8 +754,8 @@ tbody tr:hover {
 
 .summary-text {
   margin: 0;
-  color: #dce3de;
-  font-size: 0.88rem;
+  color: rgba(220, 227, 222, 0.78);
+  font-size: 0.94rem;
   line-height: 1.65;
 }
 
@@ -843,6 +843,7 @@ tbody tr:hover {
 .pg-player {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   width: 100%;
   min-height: 28px;
   border: 0;
@@ -872,6 +873,14 @@ tbody tr:hover {
 .pg-player.pg-winner {
   background: rgba(184, 214, 95, 0.14);
   color: #d9f28b;
+}
+
+.pg-prob {
+  flex-shrink: 0;
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+  margin-left: 6px;
+  opacity: 0.85;
 }
 
 /* Dim the loser's name once a pick is made */

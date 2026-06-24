@@ -224,7 +224,7 @@ function MatchupCard({ matchup, selected, onSelect }) {
   );
 }
 
-function PlaygroundMatchupCard({ matchup, onPick }) {
+function PlaygroundMatchupCard({ matchup, onPick, leftProb, rightProb }) {
   const { id, leftName, rightName, pick, isFinal, roundIndex } = matchup;
   return React.createElement(
     "div",
@@ -243,7 +243,8 @@ function PlaygroundMatchupCard({ matchup, onPick }) {
         disabled: !leftName,
         onClick: () => onPick(id, "left"),
       },
-      leftName || "TBD"
+      leftName || "TBD",
+      leftProb != null && React.createElement("span", { className: "pg-prob" }, `${(leftProb * 100).toFixed(1)}%`)
     ),
     React.createElement("div", { className: "matchup-divider" }),
     React.createElement(
@@ -254,7 +255,8 @@ function PlaygroundMatchupCard({ matchup, onPick }) {
         disabled: !rightName,
         onClick: () => onPick(id, "right"),
       },
-      rightName || "TBD"
+      rightName || "TBD",
+      rightProb != null && React.createElement("span", { className: "pg-prob" }, `${(rightProb * 100).toFixed(1)}%`)
     )
   );
 }
@@ -345,7 +347,7 @@ function MatchupDetail({ matchup, summary, summaryLoading }) {
       React.createElement(CandidateList, { title: "Most likely — left half", candidates: matchup.leftCandidates }),
       React.createElement(CandidateList, { title: "Most likely — right half", candidates: matchup.rightCandidates })
     ),
-    matchup.left && React.createElement(
+    matchup.left && (summaryLoading || summary) && React.createElement(
       "div",
       { className: "match-summary" },
       React.createElement("h3", null, "Match Preview"),
@@ -356,9 +358,7 @@ function MatchupDetail({ matchup, summary, summaryLoading }) {
             React.createElement("div", { className: "loader loader-sm" }),
             React.createElement("span", null, "Generating preview…")
           )
-        : summary
-        ? React.createElement("p", { className: "summary-text" }, summary)
-        : null
+        : React.createElement("p", { className: "summary-text" }, summary)
     )
   );
 }
@@ -618,9 +618,33 @@ function PreloadedBracketView({ rounds, selectedMatchup, onSelectMatchup }) {
 function PlaygroundView() {
   const [picks, setPicks] = React.useState({});
   const [activeRound, setActiveRound] = React.useState(null);
+  const [probCache, setProbCache] = React.useState({});
+  const fetchedOrFetchingRef = React.useRef(new Set());
   const totalRounds = Math.log2(draw.length);
 
   const rounds = React.useMemo(() => buildPlaygroundRounds(picks), [picks]);
+
+  React.useEffect(() => {
+    rounds.forEach((round) => {
+      round.matchups.forEach((matchup) => {
+        if (!matchup.leftName || !matchup.rightName) return;
+        const sorted = [matchup.leftName, matchup.rightName].sort();
+        const key = sorted.join("|");
+        if (fetchedOrFetchingRef.current.has(key)) return;
+        fetchedOrFetchingRef.current.add(key);
+        const p1 = encodeURIComponent(sorted[0]);
+        const p2 = encodeURIComponent(sorted[1]);
+        fetch(`http://localhost:8000/probability?player1=${p1}&player2=${p2}`)
+          .then((res) => res.json())
+          .then((data) => {
+            setProbCache((prev) => ({ ...prev, [key]: data.probability }));
+          })
+          .catch(() => {
+            fetchedOrFetchingRef.current.delete(key);
+          });
+      });
+    });
+  }, [rounds]);
 
   function handlePick(matchId, side) {
     setPicks((prev) => {
@@ -696,13 +720,23 @@ function PlaygroundView() {
             React.createElement(
               "div",
               { className: "round-matchups" },
-              round.matchups.map((matchup) =>
-                React.createElement(PlaygroundMatchupCard, {
+              round.matchups.map((matchup) => {
+                const sorted = matchup.leftName && matchup.rightName
+                  ? [matchup.leftName, matchup.rightName].sort()
+                  : null;
+                const key = sorted ? sorted.join("|") : null;
+                const storedProb = key != null ? probCache[key] : undefined;
+                const leftIsFirst = sorted && matchup.leftName <= matchup.rightName;
+                const leftProb = storedProb != null ? (leftIsFirst ? storedProb : 1 - storedProb) : null;
+                const rightProb = leftProb != null ? 1 - leftProb : null;
+                return React.createElement(PlaygroundMatchupCard, {
                   key: matchup.id,
                   matchup,
                   onPick: handlePick,
-                })
-              )
+                  leftProb,
+                  rightProb,
+                });
+              })
             )
           )
         )

@@ -15,6 +15,10 @@ df["Date"] = pd.to_datetime(df["Date"])
 with open("tennis_elos_pretty.json") as f:
     players = json.load(f)
 
+with open("tennis_elos_bayesian.json") as f:
+    bayesian_players = json.load(f)
+
+
 # Pre-index matches by player — avoid iterrows() (slow); use vectorized iteration instead.
 from collections import defaultdict as _defaultdict
 _player_idx: dict = _defaultdict(list)
@@ -42,6 +46,37 @@ for _p1, _p2, _winner, _year in zip(
 
 
 #print(df["Winner"])
+
+def elo_probability_interval(player1, player2):
+    # Check if both players have Bayesian estimates
+    if ("gelo_bayesian" not in bayesian_players.get(player1, {}) or 
+        "gelo_bayesian" not in bayesian_players.get(player2, {})):
+        return None, None, None
+    
+    mu1 = bayesian_players[player1]["gelo_bayesian"]
+    mu2 = bayesian_players[player2]["gelo_bayesian"]
+    sigma1 = bayesian_players[player1]["gelo_uncertainty"]
+    sigma2 = bayesian_players[player2]["gelo_uncertainty"]
+    
+    
+    p3_mean = 1 / (1 + 10 ** ((mu2 - mu1) / 400))
+    
+    
+    p3_lower = 1 / (1 + 10 ** (((mu2 + sigma2) - (mu1 - sigma1)) / 400))
+    
+    
+    p3_upper = 1 / (1 + 10 ** (((mu2 - sigma2) - (mu1 + sigma1)) / 400))
+    
+    # Convert all to bo5
+    q_mean = solve_q(p3_mean).real
+    q_lower = solve_q(p3_lower).real
+    q_upper = solve_q(p3_upper).real
+    
+    mean = q_mean**3 * (6*q_mean**2 - 15*q_mean + 10)
+    lower = q_lower**3 * (6*q_lower**2 - 15*q_lower + 10)
+    upper = q_upper**3 * (6*q_upper**2 - 15*q_upper + 10)
+    
+    return round(lower, 4), round(mean, 4), round(upper, 4)
 
 def sigmoid(x):
     return 1 / (1 + math.exp(-x))
@@ -94,14 +129,21 @@ def elo_probability(player1, player2):
     return 1 / (1 + 10 ** ((eloTwo - eloOne) / 400))
 
 def elo_probability_bO5(player1, player2):
-    
-    set_prob = solve_q(elo_probability(player1, player2)).real
-    
+    eloOne = bayesian_players.get(player1, {}).get("gelo_bayesian") or players[player1]["gelo"]
+    eloTwo = bayesian_players.get(player2, {}).get("gelo_bayesian") or players[player2]["gelo"]
+    p3 = 1 / (1 + 10 ** ((eloTwo - eloOne) / 400))
+    set_prob = solve_q(p3).real
     return ((6*pow(set_prob, 5)) - (15*pow(set_prob, 4)) + (10*pow(set_prob, 3)))
 
 def elo_probability_surface(player1, player2, elo_type, best_of=5):
-    eloOne = players[player1].get(elo_type) or players[player1].get("elo")
-    eloTwo = players[player2].get(elo_type) or players[player2].get("elo")
+    if elo_type == "gelo":
+        eloOne = (bayesian_players.get(player1, {}).get("gelo_bayesian")
+                  or players[player1].get("gelo") or players[player1].get("elo"))
+        eloTwo = (bayesian_players.get(player2, {}).get("gelo_bayesian")
+                  or players[player2].get("gelo") or players[player2].get("elo"))
+    else:
+        eloOne = players[player1].get(elo_type) or players[player1].get("elo")
+        eloTwo = players[player2].get(elo_type) or players[player2].get("elo")
 
     if eloOne is None or eloTwo is None:
         return None

@@ -76,7 +76,8 @@ def match_summary(player1: str, player2: str):
     The model {favor_text} {winner} at {confidence}% confidence. Reflect this in your analysis. Highlight both players' grass court styles but make clear why {winner} is expected to win. Don't
     use percentages to describe the recent form metric or head to head metric, just use words for those'
     - Do not directly reference who is the defending champion or make specific claims about recent tournament history
-    Don't include any header with the match or preview title, just go straight into the analysis"""
+    Don't include any header with the match or preview title, just go straight into the analysis
+    Reference the players by their last names when you want to use the name"""
 
     message = client.messages.create(
         model="claude-haiku-4-5",
@@ -88,3 +89,21 @@ def match_summary(player1: str, player2: str):
     _summary_cache[cache_key] = result
     return {"summary": result}
 
+
+@app.get("/probability")
+def get_probability(player1: str, player2: str):
+    prob = calculate_match_probability(player1, player2)
+    return {"player1": player1, "player2": player2, "probability": round(prob, 4)}
+
+
+@app.get("/prediction_interval")
+def prediction_interval(player1: str, player2: str):
+    lower, mean, upper = elo_probability_interval(player1, player2)
+    if mean is None:
+        return {"error": "Bayesian estimates not available for one or both players"}
+    return {
+        "player1": player1,
+        "lower": round(lower * 100, 1),
+        "mean": round(mean * 100, 1),
+        "upper": round(upper * 100, 1)
+    }
